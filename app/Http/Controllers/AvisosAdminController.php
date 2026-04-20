@@ -16,7 +16,7 @@ class AvisosAdminController extends Controller
             $prioridad = $request->query('prioridad', null);
             $limit = $request->query('limit', 50);
             $page = $request->query('page', 1);
-            $curso_id = $request->query('curso_id', null);
+            $materia_id = $request->query('materia_id', null);
 
             $query = DB::table('avisos')
                 ->join('users', 'avisos.autor_id', '=', 'users.id')
@@ -29,8 +29,8 @@ class AvisosAdminController extends Controller
                 $query->where('avisos.prioridad', $prioridad);
             }
 
-            if ($curso_id) {
-                $query->where('avisos.curso_id', $curso_id);
+            if ($materia_id) {
+                $query->where('avisos.materia_id', $materia_id);
             }
 
             $total = $query->count();
@@ -64,47 +64,45 @@ class AvisosAdminController extends Controller
      * Crear nuevo aviso
      */
     public function crearAviso(Request $request)
-    {
-        try {
-            $request->validate([
-                'titulo' => 'required|string|max:255',
-                'contenido' => 'required|string',
-                'autor_id' => 'required|integer',
-                'curso_id' => 'nullable|integer',
-                'prioridad' => 'required|in:baja,media,alta'
-            ]);
+{
+    try {
+        $request->validate([
+            'titulo'    => 'required|string|max:255',
+            'contenido' => 'required|string',
+            'prioridad' => 'required|in:baja,media,alta',
+            'materia_id'  => 'nullable|integer'
+        ]);
 
-            $avisoId = DB::table('avisos')->insertGetId([
-                'titulo' => $request->titulo,
-                'contenido' => $request->contenido,
-                'autor_id' => $request->autor_id,
-                'curso_id' => $request->curso_id,
-                'prioridad' => $request->prioridad,
-                'leido' => 0,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
+        $avisoId = DB::table('avisos')->insertGetId([
+            'titulo'     => $request->titulo,
+            'contenido'  => $request->contenido,
+            'autor_id'   => $request->user()->id, // ✅ del token, no del body
+            'materia_id'   => $request->materia_id,
+            'prioridad'  => $request->prioridad,
+            'leido'      => 0,
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
 
-            $aviso = DB::table('avisos')
-                ->join('users', 'avisos.autor_id', '=', 'users.id')
-                ->where('avisos.id', $avisoId)
-                ->select('avisos.*', 'users.name as autor')
-                ->first();
+        $aviso = DB::table('avisos')
+            ->join('users', 'avisos.autor_id', '=', 'users.id')
+            ->where('avisos.id', $avisoId)
+            ->select('avisos.*', 'users.name as autor')
+            ->first();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Aviso creado correctamente',
-                'data' => $aviso
-            ], 201);
+        return response()->json([
+            'success' => true,
+            'message' => 'Aviso creado correctamente',
+            'data'    => $aviso
+        ], 201);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error: ' . $e->getMessage()
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error: ' . $e->getMessage()
+        ], 500);
     }
-
+}
     /**
      * Actualizar aviso
      */
@@ -185,6 +183,8 @@ class AvisosAdminController extends Controller
             ], 500);
         }
     }
+
+
 }
 
 /**

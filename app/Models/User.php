@@ -6,7 +6,6 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Notifications\Notifiable;
-use App\Models\Materia;
 
 class User extends Authenticatable
 {
@@ -16,6 +15,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'rol',        // ← la columna de rol en tu tabla users
     ];
 
     protected $hidden = [
@@ -27,11 +27,10 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'password'          => 'hashed',
         ];
     }
 
-    // 🎓 RELACIÓN: un usuario tiene muchas materias
     public function materias()
     {
         return $this->hasMany(Materia::class);

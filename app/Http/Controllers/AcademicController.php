@@ -79,15 +79,6 @@ class AcademicController extends Controller
         ]);
     }
 
-    public function getAvisos()
-    {
-        $data = DB::table('avisos')->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $data
-        ]);
-    }
 
     public function getSolicitudes()
     {
@@ -113,4 +104,32 @@ class AcademicController extends Controller
             'message' => 'Solicitud creada'
         ]);
     }
+
+    public function getAvisos(Request $request)
+{
+    try {
+        $avisos = DB::table('avisos')
+            ->join('users', 'avisos.autor_id', '=', 'users.id')
+            ->select(
+                'avisos.id',
+                'avisos.titulo',
+                'avisos.contenido',
+                'avisos.prioridad',
+                'avisos.created_at',
+                'users.name as autor'
+            )
+            ->orderBy('avisos.created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data'    => $avisos
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error: ' . $e->getMessage()
+        ], 500);
+    }
+}
 }

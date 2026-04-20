@@ -3,8 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
-use App\Models\Horario;
 
 class Materia extends Model
 {
@@ -28,5 +26,24 @@ class Materia extends Model
     public function horarios()
     {
         return $this->hasMany(Horario::class);
+    }
+
+    public function contenidos()
+    {
+        return $this->hasMany(MateriaContenido::class);
+    }
+
+    public function archivos()
+    {
+        return $this->hasMany(MateriaArchivo::class);
+    }
+
+    public function actividades()
+    {
+        return $this->hasMany(MateriaActividad::class);
+    }
+    public function docente()
+    {
+        return $this->belongsTo(User::class, 'docente_id');
     }
 }

@@ -2,10 +2,28 @@
 namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
  
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
 class Aviso extends Model
 {
-    public $timestamps  = false;
-    protected $table    = 'avisos';
-    protected $fillable = ['titulo','contenido','tipo','dirigido_a','carrera','publicado_por','activo','fecha_inicio','fecha_fin'];
+    protected $fillable = [
+        'titulo',
+        'contenido',
+        'autor_id',
+        'materia_id',
+        'prioridad',
+        'leido'
+    ];
+
+    public function materia()
+    {
+        return $this->belongsTo(Materia::class);
+    }
+
+    public function docente()
+    {
+        return $this->belongsTo(User::class, 'autor_id');
+    }
 }
- 
