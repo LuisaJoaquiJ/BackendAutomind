@@ -189,7 +189,7 @@ class MateriaContenidoController extends Controller
             'contenido_texto' => $data['contenido_texto'] ?? null,
             'url'             => $data['url'] ?? null,
             'orden'           => $data['orden'] ?? (($materia->contenidos()->max('orden') ?? 0) + 1),
-            'activo'          => true,
+            'activo'          => false,
         ]);
 
         $archivos = collect();
@@ -206,6 +206,17 @@ class MateriaContenidoController extends Controller
 
         foreach ($request->file('imagenes', []) as $archivo) {
             $archivos->push($this->guardarArchivo($materia, $contenido, $archivo, 'imagen', $request->user()->id));
+        }
+
+        // Despachar jobs para procesar PDFs en background (si la configuración de colas lo permite)
+        foreach ($archivos as $a) {
+            if (($a->tipo ?? null) === 'pdf') {
+                try {
+                    \App\Jobs\ProcessUploadedFile::dispatch($a->id);
+                } catch (\Throwable $e) {
+                    Log::warning('Could not dispatch ProcessUploadedFile: ' . $e->getMessage());
+                }
+            }
         }
 
         return response()->json([
@@ -258,7 +269,7 @@ class MateriaContenidoController extends Controller
                 'nivel'           => 'basico',
                 'contenido_texto' => $textoGenerado,
                 'orden'           => ($materia->contenidos()->max('orden') ?? 0) + 1,
-                'activo'          => true,
+                'activo'          => false,
             ]);
 
             return response()->json([
@@ -272,6 +283,48 @@ class MateriaContenidoController extends Controller
                 'success' => false,
                 'message' => 'Error interno al generar el contenido.',
             ], 500);
+        }
+    }
+
+    /**
+     * Generar contenido con IA usando solo un prompt (docente)
+     * POST /docente/materias/{materia}/contenido/generar-ia
+     */
+    public function generarConIA(Request $request, Materia $materia)
+    {
+        $this->autorizarGestion($request, $materia);
+
+        $data = $request->validate([
+            'tema' => 'required|string|max:500',
+            'tipo' => ['required', Rule::in(['explicacion', 'resumen', 'ejercicios', 'evaluacion', 'guia', 'quiz', 'examen'])],
+            'n' => 'nullable|integer|min:1|max:50',
+            'nivel' => ['nullable', Rule::in(['basico', 'intermedio', 'avanzado'])],
+        ]);
+
+        $n = $data['n'] ?? 5;
+        $nivel = $data['nivel'] ?? 'basico';
+
+        try {
+            $ia = app(\App\Services\MateriaIAService::class);
+            $resultado = $ia->generateFromPrompt($materia, $data['tema'], $data['tipo'], (int)$n, $nivel);
+
+            // Guardar siempre el resultado (incluido fallback) como contenido generado
+            $titulo = ucfirst($data['tipo']) . ': ' . $data['tema'];
+            $contenido = MateriaContenido::create([
+                'materia_id'      => $materia->id,
+                'creado_por'      => $request->user()->id,
+                'titulo'          => $titulo,
+                'tipo'            => 'generado',
+                'nivel'           => $nivel,
+                'contenido_texto' => is_string($resultado) ? $resultado : json_encode($resultado, JSON_UNESCAPED_UNICODE),
+                'orden'           => ($materia->contenidos()->max('orden') ?? 0) + 1,
+                'activo'          => false,
+            ]);
+
+            return response()->json(['success' => true, 'data' => $this->formatearContenido($contenido->load('archivos'))], 201);
+        } catch (\Throwable $e) {
+            Log::error('generarConIA error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Error interno al generar con IA.'], 500);
         }
     }
 
@@ -300,6 +353,31 @@ class MateriaContenidoController extends Controller
             'success' => true,
             'message' => 'Contenido actualizado correctamente.',
             'data'    => $this->formatearContenido($contenido->fresh()->load('archivos')),
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Publicar / despublicar contenido generado por IA
+    // POST /docente/contenido/{contenido}/publicar
+    // Body opcional: { "activo": true|false }
+    // ─────────────────────────────────────────────────────────────────────────
+    public function publicar(Request $request, MateriaContenido $contenido)
+    {
+        $materia = Materia::findOrFail($contenido->materia_id);
+        $this->autorizarGestion($request, $materia);
+
+        $data = $request->validate([
+            'activo' => 'nullable|boolean',
+        ]);
+
+        $contenido->update([
+            'activo' => $data['activo'] ?? true,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $contenido->activo ? 'Contenido publicado correctamente.' : 'Contenido despublicado correctamente.',
+            'data' => $this->formatearContenido($contenido->fresh()->load('archivos')),
         ]);
     }
 
@@ -377,6 +455,7 @@ class MateriaContenidoController extends Controller
             'nivel'      => $c->nivel,
             'resumen'    => $c->resumen,
             'contenido'  => $c->contenido_texto,
+            'contenido_json' => null,
             'url'        => $c->url ?: ($archivoPrincipal ? Storage::disk('public')->url($archivoPrincipal->ruta) : null),
             'orden'      => $c->orden,
             'activo'     => $c->activo,
@@ -394,6 +473,30 @@ class MateriaContenidoController extends Controller
                 'tamano'          => $a->tamano,
                 'descargable'     => $a->descargable,
             ]);
+        }
+
+        // Si el contenido fue generado por IA, intentar decodificar JSON y exponerlo como `contenido_json`
+        try {
+            if (($c->tipo ?? '') === 'generado' && is_string($c->contenido_texto) && trim($c->contenido_texto) !== '') {
+                $decoded = json_decode($c->contenido_texto, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $data['contenido_json'] = $decoded;
+                } else {
+                    // Intentar extraer fragmento JSON si el string contiene otros textos
+                    $start = strpos($c->contenido_texto, '{');
+                    $end = strrpos($c->contenido_texto, '}');
+                    if ($start !== false && $end !== false && $end > $start) {
+                        $frag = substr($c->contenido_texto, $start, $end - $start + 1);
+                        $decoded2 = json_decode($frag, true);
+                        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded2)) {
+                            $data['contenido_json'] = $decoded2;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // no bloquear la respuesta por errores de parsing
+            \Illuminate\Support\Facades\Log::warning('formatearContenido json decode failed: ' . $e->getMessage());
         }
 
         return $data;

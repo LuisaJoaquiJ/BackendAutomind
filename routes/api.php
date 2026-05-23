@@ -20,7 +20,7 @@ use App\Http\Controllers\DocenteController;
 
 // ===== AUTH =====
 Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->name('login');
 
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -50,6 +50,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/materias/{materia}/actividades',                        [MateriaActividadController::class, 'store']);
     Route::post('/materias/{materia}/actividades/{actividad}/respuestas', [MateriaActividadController::class, 'responder']);
     Route::post('/materias/{materia}/retos/generar',                      [MateriaActividadController::class, 'generarReto']);
+
+    // ===== AGENTE IA - OLLAMA LOCAL =====
+    Route::get('/materias/{id}/ia/pantalla-dinamica',  [MateriaController::class, 'pantallaDinamica']);
+    Route::post('/materias/{id}/ia/chat',              [MateriaController::class, 'chat']);
 
     // ===== PAGOS =====
     Route::get('/pagos', [AcademicController::class, 'getPagos']);
@@ -173,6 +177,8 @@ Route::prefix('docente')->middleware('auth:sanctum')->group(function () {
     Route::get('/materias/{materia}/contenido',            [MateriaContenidoController::class, 'index']);
     Route::post('/materias/{materia}/contenido',           [MateriaContenidoController::class, 'store']);
     Route::post('/materias/{materia}/contenido/generar',   [MateriaContenidoController::class, 'generar']);
+    Route::post('/materias/{materia}/contenido/generar-ia', [MateriaContenidoController::class, 'generarConIA']);
+    Route::post('/contenido/{contenido}/publicar',         [MateriaContenidoController::class, 'publicar']);
     // {contenido} en lugar de {id} para que Laravel resuelva MateriaContenido automáticamente
     Route::delete('/contenido/{contenido}',                [MateriaContenidoController::class, 'destroy']);
 

@@ -279,8 +279,8 @@ class DocenteController extends Controller
                 'data'    => [
                     'id'            => $nota->id,
                     'estudiante_id' => $nota->user_id,
-                    'estudiante'    => $estudiante->name ?? null,
-                    'email'         => $estudiante->email ?? null,
+                    'estudiante'    => $estudiante?->name ?? 'Desconocido',
+                    'email'         => $estudiante?->email ?? null,
                     'curso_id'      => $nota->materia_id,
                     'nota'          => $this->calcularPromedio($nota->corte1, $nota->corte2, $nota->corte3),
                     'corte1'        => $nota->corte1,
@@ -330,8 +330,8 @@ class DocenteController extends Controller
                 'data'    => [
                     'id'            => $nota->id,
                     'estudiante_id' => $nota->user_id,
-                    'estudiante'    => $estudiante->name ?? null,
-                    'email'         => $estudiante->email ?? null,
+                    'estudiante'    => $estudiante?->name ?? 'Desconocido',
+                    'email'         => $estudiante?->email ?? null,
                     'curso_id'      => $nota->materia_id,
                     'nota'          => $this->calcularPromedio($nota->corte1, $nota->corte2, $nota->corte3),
                     'corte1'        => $nota->corte1,

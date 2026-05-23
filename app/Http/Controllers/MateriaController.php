@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Materia;
+use App\Services\MateriaIAService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class MateriaController extends Controller
 {
@@ -180,5 +182,137 @@ class MateriaController extends Controller
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => 'Error: ' . $e->getMessage()], 500);
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🤖 MÉTODOS DE IA - AGENTE OLLAMA LOCAL
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Obtiene contenido dinámico generado por IA para una materia
+     * Soporta diferentes niveles: basico, intermedio, avanzado
+     */
+    public function pantallaDinamica(Request $request, $id)
+    {
+        $materia = $this->findAccessibleMateria($request, $id);
+
+        if (!$materia) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Materia no encontrada'
+            ], 404);
+        }
+
+        $nivel = $request->query('nivel', 'basico');
+        $service = app(MateriaIAService::class);
+        
+        // Obtener texto del PDF si existe
+        $pdfText = null;
+        $archivo = $materia->archivos()->where('tipo', 'pdf')->first();
+        if ($archivo) {
+            $pdfText = $archivo->nombre_original ?? '';
+        }
+
+        $pack = $service->buildLearningPack($materia, $pdfText, $nivel);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'materia' => $materia,
+                'nivel_seleccionado' => $nivel,
+                'niveles_disponibles' => ['basico', 'intermedio', 'avanzado'],
+                'introduccion' => $pack['introduccion'] ?? null,
+                'contenidos' => $pack['contenidos'],
+                'contenido' => $pack['contenidos'],
+                'ejercicios_interactivos' => $pack['ejercicios_interactivos'] ?? [],
+                'archivos_generales' => $archivo ? [[
+                    'nombre' => $archivo->nombre_original,
+                    'url' => Storage::disk('public')->url($archivo->ruta),
+                    'tipo' => 'pdf',
+                ]] : [],
+                'archivos' => $archivo ? [[
+                    'nombre' => $archivo->nombre_original,
+                    'url' => Storage::disk('public')->url($archivo->ruta),
+                    'tipo' => 'pdf',
+                ]] : [],
+                'actividades' => $pack['actividades'],
+                'retos' => $pack['retos'],
+                'preguntas_frecuentes' => $pack['preguntas_frecuentes'] ?? [],
+                'aprendizaje_progresivo' => [
+                    'nivel_actual' => $pack['aprendizaje_progresivo']['nivel_actual'] ?? $nivel,
+                    'siguiente_nivel' => $pack['aprendizaje_progresivo']['siguiente_nivel'] ?? 'intermedio',
+                    'progreso_sugerido' => $pack['aprendizaje_progresivo']['progreso_sugerido'] ?? 'Sigue practicando los conceptos de la materia.'
+                ]
+            ]
+        ]);
+    }
+
+    /**
+     * Inicia o continúa un chat interactivo con el agente IA
+     * Soporta historial de conversación y diferentes niveles de aprendizaje
+     */
+    public function chat(Request $request, $id)
+    {
+        $materia = $this->findAccessibleMateria($request, $id);
+
+        if (!$materia) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Materia no encontrada'
+            ], 404);
+        }
+
+        $payload = $request->validate([
+            'mensaje' => 'required|string|max:4000',
+            'nivel' => 'nullable|in:basico,intermedio,avanzado',
+            'historial' => 'nullable|array',
+            'historial.*.role' => 'nullable|string',
+            'historial.*.content' => 'nullable|string',
+            'persona' => 'nullable|string',
+        ]);
+
+        $nivel = $payload['nivel'] ?? 'basico';
+        $persona = $payload['persona'] ?? 'profesor_interactivo';
+        
+        // Obtener texto del PDF si existe
+        $pdfText = null;
+        $archivo = $materia->archivos()->where('tipo', 'pdf')->first();
+        if ($archivo) {
+            $pdfText = $archivo->nombre_original ?? '';
+        }
+
+        $respuesta = app(MateriaIAService::class)->buildChatResponse(
+            $materia,
+            $pdfText,
+            $payload['mensaje'],
+            $nivel,
+            $payload['historial'] ?? [],
+            $persona
+        );
+
+        return response()->json([
+            'success' => true,
+            'data' => $respuesta,
+        ]);
+    }
+
+    /**
+     * Helper: encuentra una materia accesible para el usuario actual
+     * Respeta los permisos según el rol del usuario
+     */
+    private function findAccessibleMateria(Request $request, $id)
+    {
+        $user = $request->user();
+        $role = strtolower((string) ($user->rol ?? ''));
+
+        $query = Materia::where('id', $id);
+
+        if (in_array($role, ['profesor', 'docente'], true)) {
+            $query->where('user_id', $user->id);
+        } elseif (in_array($role, ['estudiante', 'student'], true)) {
+            $query->where('user_id', $user->id);
+        }
+
+        return $query->first();
     }
 }
